@@ -240,6 +240,35 @@ export class InnerPlayer {
             "input",
             this.virtualKeyboardInput.bind(this),
         );
+        this.virtualKeyboard.addEventListener("compositionend", () => {
+            this.virtualKeyboardInput();
+        });
+        for (const type of ["keydown", "keyup"]) {
+            this.virtualKeyboard.addEventListener(type, (event) => {
+                const key = event as KeyboardEvent;
+                // Text is committed by input, not by both the native key and
+                // the synthetic key emitted by virtualKeyboardInput.
+                // iOS may report keyCode 229 before isComposing becomes true.
+                if (
+                    key.isComposing ||
+                    key.keyCode === 229 ||
+                    [...key.key].length === 1
+                ) {
+                    event.stopPropagation();
+                }
+            });
+        }
+        this.container.addEventListener("mousedown", (event) => {
+            // Safari sends a compatibility mousedown after touch has already
+            // focused the hidden input. Its default action focuses the canvas
+            // container again and dismisses the software keyboard.
+            if (
+                event.target instanceof HTMLCanvasElement &&
+                this.isVirtualKeyboardFocused()
+            ) {
+                event.preventDefault();
+            }
+        });
         this.saveManager = this.shadow.getElementById(
             "save-manager",
         )! as HTMLDivElement;
@@ -1439,7 +1468,12 @@ export class InnerPlayer {
         }
     }
 
-    private virtualKeyboardInput() {
+    private virtualKeyboardInput(event?: Event) {
+        // Do not emit or clear IME preedit text. compositionend commits the
+        // final value; a following input event sees the already-cleared value.
+        if (event instanceof InputEvent && event.isComposing) {
+            return;
+        }
         const input = this.virtualKeyboard;
         const string = input.value;
         for (const char of string) {
