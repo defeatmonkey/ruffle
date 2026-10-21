@@ -2695,7 +2695,15 @@ impl<'gc> TDisplayObject<'gc> for EditText<'gc> {
         }
 
         fn is_transform_positive_scale_only(context: &mut RenderContext) -> bool {
-            let Matrix { a, b, c, d, .. } = context.transform_stack.transform().matrix;
+            let mut matrix = context.transform_stack.transform().matrix;
+            // The device-font shear tolerance is in stage coordinates. Including
+            // viewport scaling makes the same text disappear at larger window
+            // sizes or device pixel ratios. Offscreen draws have no viewport
+            // transform to remove.
+            if !context.is_offscreen {
+                matrix = context.stage.inverse_view_matrix() * matrix;
+            }
+            let Matrix { a, b, c, d, .. } = matrix;
             // Flash does allow small shear. The following value is higher than
             // expected due to the fact that the final calculated shear differs
             // between Flash and Ruffle, and using a precise value would hide
