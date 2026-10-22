@@ -373,6 +373,10 @@ impl<'gc> LoadManager<'gc> {
                                 url,
                                 res
                             );
+                            if !res {
+                                // A nested import will resume this movie and notify its importer.
+                                return;
+                            }
                         } else {
                             tracing::warn!(
                                 "Unsupported content type for ImportAssets: {:?}",
@@ -380,7 +384,7 @@ impl<'gc> LoadManager<'gc> {
                             );
                         }
 
-                        importer_movie.finish_importing();
+                        importer_movie.finish_importing(uc);
                     });
                     Ok(())
                 }

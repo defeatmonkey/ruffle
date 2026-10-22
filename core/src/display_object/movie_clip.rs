@@ -619,13 +619,22 @@ impl<'gc> MovieClip<'gc> {
         is_finished
     }
 
-    pub fn finish_importing(self) {
-        self.0
-            .shared
-            .get()
-            .preload_progress
-            .awaiting_import
-            .set(false);
+    pub fn finish_importing(self, context: &mut UpdateContext<'gc>) {
+        let mut movie = self;
+        loop {
+            let shared = movie.0.shared.get();
+            shared.preload_progress.awaiting_import.set(false);
+            let Some(parent) = shared.importer_movie else {
+                // Ordinary movies resume through the player's chunked preloader.
+                break;
+            };
+            // Imported libraries are not in the display list or the player's preloader.
+            // Finish their remaining tags before releasing the next importer.
+            if !movie.preload(context, &mut ExecutionLimit::none()) {
+                break;
+            }
+            movie = parent;
+        }
     }
 
     #[inline]
