@@ -394,6 +394,7 @@ impl<'gc> MovieClip<'gc> {
         write.tag_stream_pos.set(0);
         write.flags.set(MovieClipFlags::PLAYING);
         write.current_frame.set(0);
+        write.queued_goto.set(None);
         write.audio_stream.take();
     }
 
@@ -447,6 +448,14 @@ impl<'gc> MovieClip<'gc> {
     /// Execute all other timeline actions on this object.
     pub fn run_frame_avm1(self, context: &mut UpdateContext<'gc>) {
         if !self.movie().is_action_script_3() {
+            if let Some(goto) = self.0.queued_goto.get() {
+                let target = goto.frame.min(self.header_frames());
+                if self.frames_loaded() >= i32::from(target) {
+                    self.0.queued_goto.set(None);
+                    self.goto_frame_now(context, goto);
+                    return;
+                }
+            }
             // Run my load/enterFrame clip event.
             let is_load_frame = !self.0.contains_flag(MovieClipFlags::INITIALIZED);
             if is_load_frame {
@@ -908,6 +917,16 @@ impl<'gc> MovieClip<'gc> {
             frame: goto_info.frame.max(1),
             stop_or_play: goto_info.stop_or_play,
         };
+
+        if !self.movie().is_action_script_3() {
+            if self.current_frame() == 0 && self.frames_loaded() == 0 {
+                // A stop before the first frame is parsed must not strand a loaded movie
+                // at frame zero. Keep the requested destination until it is available.
+                self.0.queued_goto.set(Some(goto_info));
+                return;
+            }
+            self.0.queued_goto.set(None);
+        }
 
         // AVM2 does not allow a clip to goto while it is executing a frame script.
         // The goto is instead queued and run once the frame script is completed.
@@ -2504,7 +2523,11 @@ impl<'gc> MovieClip<'gc> {
             }
         }
 
-        let goto_info = self.0.queued_goto.take();
+        let goto_info = if self.movie().is_action_script_3() {
+            self.0.queued_goto.take()
+        } else {
+            None
+        };
         if let Some(goto_info) = goto_info {
             self.goto_frame_now(context, goto_info);
 
